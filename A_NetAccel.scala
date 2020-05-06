@@ -840,7 +840,6 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 				//Foreach (0 until len_y+2 by 1, 0 until len_x+2 by 1){(i,j) =>
                                 //println("padding index = (" + i + "," + j + ") ==>" + SRAM_act_mem(dst_addr_y+i, dst_addr_x+j))}
 	  }
-          
 
 
             ///////////////////////////////////////////////
@@ -1132,6 +1131,16 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                   1: Int,
                   784: Int
                 )
+		 generic_sram_dram_copy(
+                SRAM_act_mem: SRAM2[T],
+                DRAM_input_mem: DRAM2[T],
+                1: Int, //src
+                0: Int, //src
+                0: Int, //dst
+                0: Int, //dst
+                1: Int,
+                10: Int
+            ) 
 
 		/*transpose(
 		  6: Int,
