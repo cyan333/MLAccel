@@ -797,10 +797,10 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 		val shift = Reg[Int](0)
 		shift := 0
 		val dummy = Reg[Int](0)
-		Foreach(0 until len_y by image_length){ i =>
+		Sequential.Foreach(0 until len_y by image_length){ i =>
 				
-			Foreach(-1 until image_length+1 by 1) { j =>
-			Foreach(-1 until len_x+1 by 1) { k =>
+			Sequential.Foreach(-1 until image_length+1 by 1) { j =>
+			Sequential.Foreach(-1 until len_x+1 by 1) { k =>
 				if(j == -1) {
 					SRAM_act_mem(dst_addr_y+shift+j+1,dst_addr_x+k+1) = 0
 					//print("First row")
@@ -840,6 +840,7 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 				//Foreach (0 until len_y+2 by 1, 0 until len_x+2 by 1){(i,j) =>
                                 //println("padding index = (" + i + "," + j + ") ==>" + SRAM_act_mem(dst_addr_y+i, dst_addr_x+j))}
 	  }
+          
 
 
             ///////////////////////////////////////////////
