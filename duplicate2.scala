@@ -1060,10 +1060,10 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                   28: Int,
                   448: Int
                 )
-                //println("------MAX Pooling--------")
-                //Foreach(0 until 224 by 1, 0 until 14 by 1){ (i,j) =>
-                //  println("max pooling result ******* (" + j + "," + i + ") --> " + SRAM_act_mem(j,i))
-                //}
+                println("------MAX Pooling--------")
+                Foreach(0 until 224 by 1, 0 until 14 by 1){ (i,j) =>
+                  println("max pooling result ******* (" + j + "," + i + ") --> " + SRAM_act_mem(j,i))
+                }
 
                 /*padding(
 		  0: Int,
