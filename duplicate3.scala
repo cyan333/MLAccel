@@ -274,7 +274,7 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
             //global sram buffer is large to support writes and reads
             //one side while inputs are read from the other
             val SRAM_weight_mem = SRAM[T](GLOBAL_SRAM_WEIGHT_M, GLOBAL_SRAM_WEIGHT_N)
-            val SRAM_act_mem    = SRAM[T](GLOBAL_SRAM_ACT_M, GLOBAL_SRAM_ACT_N*2)
+            val SRAM_act_mem    = SRAM[T](GLOBAL_SRAM_ACT_M, GLOBAL_SRAM_ACT_N)
 
 
 
