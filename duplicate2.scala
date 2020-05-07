@@ -534,6 +534,7 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                             if(SRAM_act_mem(i+src_addr_y+y,j+src_addr_x+x) > SRAM_temp) { temp0 = SRAM_act_mem(i+src_addr_y+y,j+src_addr_x+x)}
                           }
                           SRAM_act_mem(dst_addr_y+a,dst_addr_x+b) = temp0
+				println("max pooling (" + (dst_addr_y+a) + "," + (dst_addr_x+b) + ") max output = "+ SRAM_act_mem(dst_addr_y+a,dst_addr_x+b))
                           if((a <= (len_y/2 -1)) && (b < (len_x/2-1))){
                             b = b+1
                           }
