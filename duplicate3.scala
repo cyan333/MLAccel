@@ -273,8 +273,8 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 
             //global sram buffer is large to support writes and reads
             //one side while inputs are read from the other
-            val SRAM_weight_mem = SRAM[T](GLOBAL_SRAM_WEIGHT_M, GLOBAL_SRAM_WEIGHT_N)
-            val SRAM_act_mem    = SRAM[T](GLOBAL_SRAM_ACT_M, GLOBAL_SRAM_ACT_N)
+            val SRAM_weight_mem = SRAM[T](GLOBAL_SRAM_WEIGHT_M, GLOBAL_SRAM_WEIGHT_N).nonbuffer
+            val SRAM_act_mem    = SRAM[T](GLOBAL_SRAM_ACT_M, GLOBAL_SRAM_ACT_N).nonbuffer
 
 
 
@@ -360,7 +360,7 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                 len_y: Int
             ) : Unit = {
 
-                Foreach(0 until len_y by 1,
+                Sequential.Foreach(0 until len_y by 1,
                     0 until len_x by 1)
                     {(y, x) =>
                         SRAM_dst(SRAM_dst_idx_y+y,SRAM_dst_idx_x+x) = SRAM_src(SRAM_src_idx_y+y,SRAM_src_idx_x+x)
