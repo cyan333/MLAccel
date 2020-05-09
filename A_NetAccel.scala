@@ -54,10 +54,10 @@ import spatial.dsl._
         // MODIFY TO BE WITHIN FPGA LIMITS
         // SPECIFIC FPGA IS: XILINX VU9P
         // YOU DECIDE THE CONFIG BASED ON YOUR SCHEDULE
-        val GLOBAL_SRAM_WEIGHT_M = 3200
-        val GLOBAL_SRAM_WEIGHT_N = 4000
+        val GLOBAL_SRAM_WEIGHT_M = 3120
+        val GLOBAL_SRAM_WEIGHT_N = 3140
 
-        val GLOBAL_SRAM_ACT_M = 3900
+        val GLOBAL_SRAM_ACT_M = 3140
         val GLOBAL_SRAM_ACT_N = 800
 	//val bm = 16 //16
 	//val bn = 784  //784
@@ -67,8 +67,8 @@ import spatial.dsl._
         //
         // DRAMs
         
-        val CFG_DRAM_WEIGHT_MEM_M = 4000
-        val CFG_DRAM_WEIGHT_MEM_N = 4000
+        val CFG_DRAM_WEIGHT_MEM_M = 3120
+        val CFG_DRAM_WEIGHT_MEM_N = 3140
 
         val CFG_DRAM_INPUT_MEM_M = 32
         val CFG_DRAM_INPUT_MEM_N = 32
@@ -76,7 +76,9 @@ import spatial.dsl._
         val CFG_DRAM_OUTPUT_MEM_M = 64
         val CFG_DRAM_OUTPUT_MEM_N = 64
 
-        
+        val bm = 2
+	val bn1 = 4
+	val actual_bp = 1
 
 	//var a = ArgIn[Int]
 	//var b = ArgIn[Int]
@@ -161,39 +163,31 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                                       //the data
                 if ( x >= 0 && x < 48 ){
                     layer1(x,y) //note: will need to add an offset term if not zero indexed
-                } else {
+                }
+		else if (x >= 48 && x < 3120) {
+			layer2(x-48,y)
+		} 
+		else {
                     0.to[T]
                 }
             }
-	    else if( y >=3 && y < 6 ) {
-		if ( x >=0 && x < 3072) {
-		     layer2(x,y-3)
-		}
-		else {
-			0.to[T]
-		}
-		}
-	   else if( y >=6 && y < 3142 ) {
+	 
+	   else if( y >=3 && y < 3139 ) {
 		if ( x >=0 && x < 784 ) {
-		     layer3(x,y-6)
+		     layer3(x,y-3)
+		}
+		else if(x >= 784 && x < 794 && y >=3 && y <787) {
+			layer4(x-784,y-3)
 		}
 		else {
 			0.to[T]
 		}
 		}
-	    else if( y >=3142 && y < 3926 ) {
-		if ( x >=0 && x < 10 ) {
-		      layer4(x,y-3142)
-		}
-		else {
-			0.to[T]
-		}
-   		}
 	    else {
 			0.to[T]
 		}	 
      	}
-
+		
         //We do the same thing as above, but for our input batch
         val HOST_input_mem = Matrix.tabulate(CFG_DRAM_INPUT_MEM_M, CFG_DRAM_INPUT_MEM_N){(y,x) => 
            //To change
@@ -222,7 +216,7 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 	print("Done the best")
 
         val HOST_output_init = Matrix.tabulate(CFG_DRAM_OUTPUT_MEM_M, CFG_DRAM_INPUT_MEM_N){(y,x) => 0.to[T]}
-	var max_value = 0
+
 
 
         ///////////////////////////////////////////////
@@ -387,10 +381,6 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                 act_B: Int, //9
                 output_idx_x: Int,
                 output_idx_y: Int,
-	        bm: Int, //16
-	        bn: Int,  //784
-	        bp: Int  //9
-
             ) : Unit = {
 		val output_idx_x1 = Reg[Int](0)
 		output_idx_x1 := output_idx_x
@@ -398,108 +388,118 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 		output_idx_y1 := output_idx_y
                 val act_idx_y1 = Reg[Int](0)
                 act_idx_y1 := act_idx_y
-                val tileC = SRAM[T](bm,bn).nonbuffer
-		val tileA = SRAM[T](bm,bp).nonbuffer
-		val tileB = SRAM[T](bp,bn).nonbuffer
-                println("bm = " + bm + "  bn = " + bn + "  bp = " + bp) 
-		Sequential.Foreach(weight_idx_y until weight_idx_y+weight_M by bm par 1) { i =>
+                //val local_output_x = Reg[Int](0)
+                //val local_output_y = Reg[Int](0)
+	        //val actual_bp = Reg[Int](0)	
+                //if(act_B==9) {actual_bp := 3} else{actual_bp = 4}
+                val bn = min(bn1,act_M)
+		
+                Sequential.Foreach(weight_idx_y until weight_idx_y+weight_M by bm par 1) { i =>
 		Sequential.Foreach(act_idx_x until act_idx_x+act_M by bn par 1) { j =>
+                  //output_idx_x1 := output_idx_x + j
+                  //output_idx_y1 := output_idx_y + i
+                  //val local_output_x = j + output_idx_x
+                  //val local_output_y = i + output_idx_y
+		  val tileC = SRAM[T](bm,bn)
                   tileC load C(i::i+bm, j::j+bn)
                   // Accumulate on top of C tile over all tiles in P dimension
-                  Sequential.MemFold(tileC)(weight_idx_x until weight_idx_x+weight_N by bp) { k =>
+                  Sequential.MemFold(tileC)(weight_idx_x until weight_idx_x+weight_N by actual_bp) { k =>
               
-		//val tileA = SRAM_weight_mem(i::i+bm,k::k+bp)
-		//val tileB = SRAM_act_mem(act_idx_y1-weight_idx_x+k::act_idx_y1-weight_idx_x+k+bp, j::j+bn)	   
-		
-		    generic_sram_dram_copy(
-                    SRAM_weight_mem: SRAM2[T],
-                    A_DRAM: DRAM2[T],
-                    k: Int, //src
-                    i: Int, //src
-                    0: Int, //dst
-                    0: Int, //dst
-                    bp: Int,
-                    bm: Int
+		val tileA = SRAM[T](bm,actual_bp)
+		val tileB = SRAM[T](actual_bp,bn)
+
+		    copy_sram_sram(
+                    SRAM_weight_mem, 
+                    k, //src
+                    i, 
+		   tileA,//src
+                    0, //dst
+                    0, //dst
+                    actual_bp,
+                    bm
                    )
-		    tileA load A_DRAM(0::bm, 0::bp)
+		   
 
-
-		    generic_sram_dram_copy(
+		    copy_sram_sram(
                     SRAM_act_mem: SRAM2[T],
-                    B_DRAM: DRAM2[T],
-                    j: Int, //src
-                    act_idx_y1-weight_idx_x+k: Int, //src
-                    0: Int, //dst
-                    0: Int, //dst
-                    bn: Int,
-                    bp: Int
+                    j, //src
+                    act_idx_y1-weight_idx_x+k, //src
+                    tileB,
+		    0, //dst
+		    0, //dst
+                    bn,
+                    actual_bp
                     )
-		    tileB load B_DRAM(0::bp,0::bn)
-		     
-                    val accum = SRAM[T](bm, bn).nonbuffer
-                    /*
-                    Sequential.Foreach(bm by 1, bp by 1){ (a,b) =>
-                      println("tileA --> (" + (i+a) + "," + (k+b) + ") --> " + SRAM_weight_mem(a+i,b+k))
-                    }
-                      println("------------------------")
-                    Sequential.Foreach(bn by 1, bp by 1){ (d,c) =>
-                      println("tileB --> (" + (act_idx_y1-weight_idx_x+c+k) + "," + (d+j) + ") --> " + SRAM_act_mem(act_idx_y1-weight_idx_x+c+k,j+d))
-                    }
-                    */
-                    /*
-                    Sequential.Foreach(bm by 1, bp by 1){ (a,b) =>
-                      println("tileA --> (" + (a) + "," + (b) + ") --> " + tileA(a,b))
-                    }
-                      println("------------------------")
-                    Sequential.Foreach(bn by 1, bp by 1){ (d,c) =>
-                      println("tileB --> (" + (c) + "," + d + ") --> " + tileB(c,d))
-                    }
-                    */
+		   		     
+                    val accum = SRAM[T](bm, bn)
+                    
+                  
+                    //Sequential.Foreach(bm by 1, actual_bp by 1){ (a,b) =>
+                      //if(i+a == 793) {print(SRAM_weight_mem(a+i,b+k) + ",")}
+                      //println("tileA --> (" + (i+a) + "," + (k+b) + ") --> " + SRAM_weight_mem(a+i,b+k))
+                    //}
+                    //Sequential.Foreach(bn by 1, actual_bp by 1){ (d,c) =>
+                      //print(SRAM_act_mem(act_idx_y1-weight_idx_x+c+k,j+d))
+                      //println("")
+                      //println("tileB --> (" + (act_idx_y1-weight_idx_x+c+k) + "," + (d+j) + ") --> " + SRAM_act_mem(act_idx_y1-weight_idx_x+c+k,j+d))
+                      //println("------------------------")
+                    //}
+                    
 
                     // Perform matrix multiply on tile
-                    Sequential.MemReduce(accum)(bp by 1 par 1){ (kk) =>
-                      val tileC_partial = SRAM[T](bm,bn).nonbuffer
+                    Sequential.MemReduce(accum)(actual_bp by 1 par 1){ (kk) =>
+		//val tileB = SRAM_act_mem(act_idx_y1-weight_idx_x+k::act_idx_y1-weight_idx_x+k+bp, j::j+bn)	   
+                      val tileC_partial = SRAM[T](bm,bn)
                       Sequential.Foreach(bm by 1 par 1, bn by 1 par 1){ (ii,jj) =>
 
                         tileC_partial(ii,jj) = tileA(ii,kk) * tileB(kk,jj)
                        // println("xxxxxxxxxxxxxxxxxxxxxxxx")
                 //println("tileA ---- (" + (ii) + "," + (kk) + ") -->" + tileA(ii,kk))
                 //println("tileB ---- (" + (kk) + "," + (jj) + ") -->" + tileB(kk,jj))
-                //println("tileC_partial ---- (" + (ii) + "," + (jj) + ") -->" + tileC_partial(ii,jj))
+                println("tileC_partial ---- (" + (ii) + "," + (jj) + ") -->" + tileC_partial(ii,jj))
+                //println(tileA(ii,kk) + "," + tileB(kk,jj) + "," + tileC_partial(ii,jj))
+                //println("bpbpbpbpbpbp = " + actual_bp)
+                      
+                      
                       }
                       tileC_partial
                     }{_+_}
                   }{_+_}
-                 /* 
-                    Sequential.Foreach(0 until bm by 1, 0 until bn by 1){(i,j) =>
-                      print("--------Tile CCCC-------")
-                      println("(" + i + "," + j + ") ---> " + tileC(i,j))
-                    }
-                    */
-                    //print("output_idx_y1 == " + output_idx_y1 + "--------output_idx_x1 == " + output_idx_x1)
+                    
+                    //Sequential.Foreach(0 until bm by 1, 0 until bn by 1){(i,j) =>
+                    //  print("--------Tile CCCC-------")
+                    //  println("(" + i + "," + j + ") ---> " + tileC(i,j))
+                    //}
+                    //  println("------------------------")
+                    
                     copy_sram_sram(
                       tileC,
                       0.to[Int],
                       0.to[Int],
                       SRAM_act_mem,
-                      output_idx_x1,
+                      output_idx_x1, 
                       output_idx_y1,
                       bn,
                       bm )
-                    //C(i::i+bm,j::j+bn) store SRAM_act_mem(output_idx_y1::output_idx_y1+bm,output_idx_x1::output_idx_x1+bn)
-
-                    //Sequential.Foreach(bm by 1, bn by 1){ (i,j) =>
-                    //  println("final SRAM Result (" + (output_idx_y1+i) + "," + (output_idx_x1+j)+ ") -->" + SRAM_act_mem(output_idx_y1+i,output_idx_x1+j))
-                    //}
+                    
+                    print("output_idx_x1 ====" + output_idx_x1) 
+                    println("output_y = " + output_idx_y1 + "bm = " + bm + "bn = " + bn)
+                    println("========sram blocked=======")
+                    
+                    Sequential.Foreach(bm by 1, bn by 1){ (i,j) =>
+                      println("final SRAM Result (" + (output_idx_y1+i) + "," + (output_idx_x1+j)+ ") -->" + SRAM_act_mem(output_idx_y1+i,output_idx_x1+j))
+                    }
+                    
+                    output_idx_x1 :+= bn
 
                 }
-                  //println("output_idx_x1 ====" + output_idx_x1)
-                  output_idx_x1 :+= bn
-                }
-                
-                //println("output_idx_x1 ====" + output_idx_x1)
-		output_idx_x1 := 0
+                output_idx_x1 := output_idx_x
 		output_idx_y1 :+= bm
+                //println("next row: output_idx_x1 ====" + output_idx_x1)
+                //println("output_idx_y1 ====" + output_idx_y1) 
+                }
+
+
               }
 
               
@@ -519,14 +519,13 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
             ) : Unit = {
 		
 			val b = Reg[Int](0)
-			val c = Reg[Int](0)
+			
 			val a = Reg[Int](0)
 			a := 0
 			b := 0
-			c := 0
 			val SRAM_temp = Reg[T](0)
-			val temp0 = Reg[T](0)
-			print("SRAM act mem max value")
+		
+			//print("SRAM act mem max value")
 			
 			Sequential.Foreach (0 until len_y-1 by 2, 0 until len_x-1 by 2){(i,j) => 
 				SRAM_temp = SRAM_act_mem(i+src_addr_y,j+src_addr_x)
@@ -547,70 +546,12 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                           }
                         }
 			
-			print("///////Max pooling values////////")
+			//print("///////Max pooling values////////")
 			/*Foreach (0 until len_y/2 by 1, 0 until len_x/2 by 1){(y,x) => 
 			  print(SRAM_act_mem(dst_addr_y+y,dst_addr_x+x))}*/
 	 
 					
 }              // Your implementation here
-
-/*def maxpool2D_k2(
-              src_addr_x: Int,
-              src_addr_y: Int,
-              dst_addr_x: Int,
-              dst_addr_y: Int,
-              len_x: Int,
-              len_y: Int
-            ) : Unit = {
-		val maxtop = Reg[T](0)
-		val maxbot = Reg[T](0)
-		val maxOut = Reg[T](0)
-		Sequential.Foreach(0 until len_y by 2, 0 until len_x by 2){(i,j) =>
-			if(SRAM_act_mem(src_addr_y+i,src_addr_x+j)> SRAM_act_mem(src_addr_y+i,src_addr_x+j+1)){
-				maxtop := SRAM_act_mem(src_addr_y+i,src_addr_x+j)
-			}
-			else {
-				maxtop := SRAM_act_mem(src_addr_y+i,src_addr_x+j+1)
-			} 
-			if(SRAM_act_mem(src_addr_y + i + 1, src_addr_x + j)> SRAM_act_mem(src_addr_y + i + 1, src_addr_x + j + 1)) {
-				maxbot := SRAM_act_mem(src_addr_y+i+1,src_addr_x+j)
-			}
-			else {
-				maxbot := SRAM_act_mem(src_addr_y+i+1,src_addr_x+j+1)
-			}
-			if (maxbot > maxtop) {
-				maxOut := maxbot
-			}			
-			else { 
-				maxOut := maxtop
-			}
-			SRAM_act_mem(dst_addr_y+i/2,dst_addr_x+j/2) = maxOut
-		}
-	}*/
-
-          
-           /* def maxpool2D_k2(
-              src_addr_x: Int,
-              src_addr_y: Int,
-              dst_addr_x: Int,
-              dst_addr_y: Int,
-              len_x: Int,
-              len_y: Int
-            ) : Unit = {
-		val maxtop = Reg[T](0)
-		val maxbot = Reg[T](0)
-		val maxOut = Reg[T](0)
-              // Your implementation here
-                Sequential.Foreach(0 until len_y by 2, 0 until len_x by 2){(i,j) =>
-                        maxtop := max(SRAM_act_mem(src_addr_y + i, src_addr_x + j), SRAM_act_mem(src_addr_y + i, src_addr_x + j + 1))
-                        maxbot := max(SRAM_act_mem(src_addr_y + i + 1, src_addr_x + j), SRAM_act_mem(src_addr_y + i + 1, src_addr_x + j + 1))
-                        maxOut := max(maxtop,maxbot)
-                        SRAM_act_mem(dst_addr_y + i/2, dst_addr_x + j/2) = maxOut
-                        //println("max pooling --> (" + (dst_addr_y + i/2) + "," + (dst_addr_x + j/2) + ")  max output = " + maxOut)
-                }	
-
-            }*/
-
 
 
             /**
@@ -682,17 +623,17 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 			val flat = Reg[Int](0)
 			flat := 0
 			val temp_reg = Reg[T](0)
-			println("+++++++Flattening+++++++")
+			//println("+++++++Flattening+++++++")
 			Sequential.Foreach (0 until len_y by  1, 0 until len_x by 1){(i,j) => 
                           temp_reg = SRAM_act_mem(src_addr_y+i,src_addr_x+j)
                           SRAM_act_mem(dst_addr_y+flat,dst_addr_x) = temp_reg
-                          println("(" + (dst_addr_y+flat) + "," + (dst_addr_x) + ") --> " + SRAM_act_mem(dst_addr_y+flat,dst_addr_x) )
+                         //println("(" + (dst_addr_y+flat) + "," + (dst_addr_x) + ") --> " + SRAM_act_mem(dst_addr_y+flat,dst_addr_x) )
                           flat:+= 1
                         }
 
 			//Foreach (0 until len_y by 1,0 until len_x by 1){(y,x) => 
 					//print(SRAM_act_mem(dst_addr_y+y,dst_addr_x+x))}
-			println("flattening Done") 
+			//println("flattening Done") 
 			
 			
               // Your implementation here
@@ -745,11 +686,10 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
             ) : Unit = {
 			val imcol = Reg[Int](0)
 			val imrow = Reg[Int](0)
-                        //imrow := 0
-			val temp = Reg[T](0)
+			//val temp = Reg[T](0).buffer
 			val imrow_channel = Reg[Int](0)
 
-			println("IM2COL START")
+			//println("IM2COL START")
 			imrow_channel := 0
 
 			/*Foreach(1 until number_of_filters by 1){(num) => 
@@ -764,13 +704,13 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                           Sequential.Foreach (0 until image_length-2 by 1, 0 until len_x-2 by 1){(i,j) =>
                             //println("i = " + i + "   j = " + j)
                             Sequential.Foreach (0 until 3 by 1, 0 until 3 by 1){(a,b) =>
-                                    temp = SRAM_act_mem(src_addr_y+c+i+a, src_addr_x+j+b)
+                                    val temp = SRAM_act_mem(src_addr_y+c+i+a, src_addr_x+j+b)
                                     //println("reading from --> ("+ (src_addr_y+c+i+a)+ "," + (src_addr_x+j+b) + ") --> " + temp)
                                     /*if(i==0){
-                                    print("(" + a+ "," + b + ")" + "(" + i + "," + j +")")
-                                    println(temp)
-                                    print("(" + imrow + "," + imcol + ")")
-                                    println("     addr_y" + dst_addr_y + "dst_addr_x = " + dst_addr_x)
+                                    //print("(" + a+ "," + b + ")" + "(" + i + "," + j +")")
+                                    //println(temp)
+                                    //print("(" + imrow + "," + imcol + ")")
+                                    //println("     addr_y" + dst_addr_y + "dst_addr_x = " + dst_addr_x)
                                     }*/
                                     SRAM_act_mem(dst_addr_y+imrow,dst_addr_x+imcol) = temp
                                     //print("----------im2col activation-----------")
@@ -779,10 +719,11 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                                     //println(SRAM_act_mem(dst_addr_y+imrow,dst_addr_x+imcol))
 
                                     imrow :+= 1
-
+                                    //println("row = " + imrow + ". col = " + imcol + ",  imrow_channel = " + imrow_channel)
                                     if(imrow % (9*imrow_channel+9) == 0) {
                                             imrow := imrow_channel*9+0
                                             imcol :+= 1
+                                    //println("row = " + imrow + ". col = " + imcol + ",  imrow_channel = " + imrow_channel)
                                     }
                             }
                             //println("********im2col b2 Next **********")
@@ -793,11 +734,11 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 				
                         }
 
-			print("IM2COL END")
+			/*print("IM2COL END")
 			print("Number of rows")
 			print(imrow)
 			print("Number of columns")
-			println(imcol)
+			println(imcol)*/
      }    
    
             def im2col_filter(
@@ -848,20 +789,19 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 	      param_random: Int
             ) : Unit = {
 			
-                println("///////////COL2IM starts//////////")
-                val i1 = Reg[Int](0)
-                i1 := 0
-                val j1 = Reg[Int](0)
-                val k1 = Reg[Int](0)
-                val temp2 = Reg[T](0)
-                val trace = Reg[Int](0)
+                //println("///////////COL2IM starts//////////")
+                
+               
+                
+                //val temp2 = Reg[T](0).buffer
+                
                 val j = Reg[Int](0)
-                k1 := 0
+               
                 j := 0
                 Sequential.Foreach(0 until len_y by 1) { i =>
                   Sequential.Foreach(0 until len_x by param_random){ col_group =>
                     Sequential.Foreach(0 until param_random by 1) { col_inside_group =>
-                      temp2 = SRAM_act_mem(src_addr_y+i,src_addr_x+col_group+col_inside_group)
+                      val temp2 = SRAM_act_mem(src_addr_y+i,src_addr_x+col_group+col_inside_group)
                       SRAM_act_mem(dst_addr_y+j+(i*param_random),dst_addr_x+col_inside_group) = temp2
                       //println("col2cim: index (" + (dst_addr_y+j+(i*param_random)) + "," + (dst_addr_x+col_inside_group) + ") --> " + SRAM_act_mem(dst_addr_y+j+(i*param_random),dst_addr_x+col_inside_group))
                     }
@@ -882,10 +822,10 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 		len_y: Int,
 		image_length: Int
 		): Unit = {
-		val temp_pad = Reg[T](0)
+		//val temp_pad = Reg[T](0).buffer
 		val shift = Reg[Int](0)
 		shift := 0
-		val dummy = Reg[Int](0)
+		
 		Sequential.Foreach(0 until len_y by image_length){ i =>
 				
 			Sequential.Foreach(-1 until image_length+1 by 1) { j =>
@@ -914,7 +854,7 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 					//println(SRAM_act_mem(dst_addr_y+shift+j+1,dst_addr_x+k+1))
 				}
 				else {
-					temp_pad = SRAM_act_mem(src_addr_y+i+j,src_addr_x+k)
+					val temp_pad = SRAM_act_mem(src_addr_y+i+j,src_addr_x+k)
 					//print("Temp_pad")
 					//print(temp_pad)
 			 		SRAM_act_mem(dst_addr_y+shift+j+1,dst_addr_x+k+1) = temp_pad
@@ -953,7 +893,7 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                 //val sram_idx_y = 0 //dst
                 //val len_x = 32
                 //val len_y = 32
-	Sequential {
+	    Sequential {
                generic_dram_sram_copy(DRAM_input_mem : DRAM2[T],
                 SRAM_act_mem: SRAM2[T],
                 0 :Int, //src
@@ -968,8 +908,8 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 		0 :Int,
 		0 :Int,
 		0 :Int,
-		4000 :Int,
-		4000 :Int)
+		3140 :Int,
+		3120 :Int)
 		im2col_b3(
                   0: Int,
                   0: Int,
@@ -978,34 +918,41 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                   30: Int,
                   30: Int,
                   30: Int
-                )
-              /*
-                Foreach(0 until 784 by 1, 0 until 9 by 1){ (i,j) =>
-                  if(j==0) {
-                    println(" ^^^^^^^^^^^ im2col b2 function call ^^^^^^^^^^  ")
+                )//9 rows and 784 cols
+                /*
+                Foreach(0 until 9 by 1, 0 until 784 by 1){ (i,j) =>
+                  if(j==783) {
+                    print(SRAM_act_mem(30+i,j))
+                    println("")
                   }
-                  println("read from ******* (" + j + "," + i + ") --> " + SRAM_act_mem(30+j,i))
-                }*/
+                  print(SRAM_act_mem(30+i,j) + ",")
+ 
+	        }
+                */
                 im2col_filter(
                   0: Int,
                   0: Int,
-                  0: Int,
-                  3072: Int,
+                  3: Int,
+                  794: Int,
                   3: Int, 
                   48: Int,
                   3: Int
-                )/*
+                )
+                /*
+                println("----- layer 1 filter ------")
                 Foreach(0 until 16 by 1, 0 until 9 by 1){ (i,j) =>
-                  if(j==0) {
-                    println(" --------function call ---------- ")
-                  }
-                  println(" read from ---------( " + (3072+i) + "," + j + ")")
-                  println(SRAM_weight_mem(3072+i,j))
-                }*/
-               println("layer1 mxm")
+                  //if(j==8) {
+                    println("(" + (794+i) + "," + (3+j) + ") -->" + SRAM_weight_mem(794+i,3+j))
+                  //  println("")
+                  //}
+                  ////print(SRAM_weight_mem(794+i,3+j) + ",")
+ 
+	        }               
+                */
+                println("layer1 mxm")
                 blocked_mxm_op(
-                  0: Int,
-                  3072: Int,
+                  3: Int,
+                  794: Int,
                   9: Int,
                   16: Int,
                   0: Int,
@@ -1014,12 +961,11 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                   9: Int,
                   0: Int, //mxm result des x
                   0: Int,
-                  16:Int,
-                  784:Int,
-                  9: Int //mxm result des y
+                
                 )
-                /*
-                println("++++++++++Padding++++++++++++")
+	        //print for mxm layer1
+                
+                println("----------mxm layer1 --------")
                 Foreach(0 until 16 by 1, 0 until 784 by 1){ (i,j) =>
                   if(j==783) {
                     print(SRAM_act_mem(i,j))
@@ -1029,8 +975,8 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                     print(SRAM_act_mem(i,j) + ",")
                   }
                 }
-*/
-                col2im_b3(
+              
+               col2im_b3(
                   0: Int,
                   0: Int,
                   0: Int, 
@@ -1038,16 +984,20 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                   784: Int,
                   16: Int,
                   28: Int
-                ) 
-               /* 
-                Foreach(0 until 28 by 1, 0 until 28 by 1){ (i,j) =>
-                  if(i==0) {
-                    println(" ^^^^^^^^^^^ col2im function call ^^^^^^^^^^  ")
+                ) //16-464 rows and 0-27 cols
+           /* 
+                println("xxxxx col 2 im layer1 xxxx")
+                Foreach(0 until 448 by 1, 0 until 28 by 1){ (i,j) =>
+                  if(j==27) {
+                    print(SRAM_act_mem(16+i,j))
+                    println("")
                   }
-                  println("read from ******* (" + j + "," + i + ") --> " + SRAM_act_mem(16+j,i))
+                  else {
+                    print(SRAM_act_mem(16+i,j) + ",")
+                  }
                 }
-                */
-                relu2D(
+          */
+               relu2D(
                   0: Int,
                   16: Int,
                   0: Int,
@@ -1055,7 +1005,18 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                   28: Int,
                   448: Int
                 )
-
+               /*
+                println("----------Relu layer1 --------")
+                Foreach(0 until 448 by 1, 0 until 28 by 1){ (i,j) =>
+                  if(j==27) {
+                    print(SRAM_act_mem(16+i,j))
+                    println("")
+                  }
+                  else {
+                    print(SRAM_act_mem(16+i,j) + ",")
+                  }
+                }
+                */
                 maxpool2D_k2(
                   0: Int,
                   16: Int, 
@@ -1064,6 +1025,18 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                   28: Int, 
                   448: Int 
                 )
+                /*
+                println("xxxxx Max Pooling Layer1 xxxx")
+                Foreach(0 until 224 by 1, 0 until 14 by 1){ (i,j) =>
+                  if(j==13) {
+                    print(SRAM_act_mem(i,j))
+                    println("")
+                  }
+                  else {
+                    print(SRAM_act_mem(i,j) + ",")
+                  }
+                }
+                */
                 /*println("------MAX Pooling--------")
                 Foreach(0 until 224 by 1, 0 until 14 by 1){ (i,j) =>
                   println("max pooling result ******* (" + j + "," + i + ") --> " + SRAM_act_mem(i,j))
@@ -1079,7 +1052,6 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
 		  14: Int 
 		)
                 /*
-                println("++++++++++Padding++++++++++++")
                 Foreach(0 until 256 by 1, 0 until 16 by 1){ (i,j) =>
                   //println("padding result ----> at (" + i + "," + j + ") --> " + SRAM_act_mem(224+i,j))
                   if(j==15) {
@@ -1090,7 +1062,8 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                     print(SRAM_act_mem(224+i,j) + ",")
                   }
                 }
-                */
+*/
+                       
                 im2col_b3(
                   0: Int,
                   224: Int,
@@ -1099,22 +1072,25 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                   16: Int,
                   256: Int,
                   16: Int
-                )
+                )      
+
                 im2col_filter(
+                  0:Int,
+                  48:Int,
                   3:Int,
-                  0:Int,
-                  0:Int,
-                  3072:Int,
+                  794:Int,
                   3:Int,
                   3072:Int,
              
                   48:Int //channel*kernel
                 )
-             println("layer2 mxm") 
+
+
+                println("layer2 mxm") 
             
                 blocked_mxm_op(
-                  0: Int,
-                  3072: Int,
+                  3: Int,
+                  794: Int,
                   144: Int,
                   64: Int,
                   0: Int,
@@ -1123,11 +1099,9 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                   144: Int,
                   0: Int,
                   144: Int,
-                  64: Int,
-                  196: Int,
-                  144: Int
+                
                 )
-                /*
+                
                 Foreach(64 by 1, 194 by 1) { (i,j) =>
                   if(j==193){
                     print(SRAM_act_mem(144+i,j))
@@ -1137,7 +1111,7 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                     print(SRAM_act_mem(144+i,j) + ",")
                   }
                 }
-	        */
+
                 col2im_b3(
                   0: Int,
                   144: Int,
@@ -1155,12 +1129,7 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                   208: Int,
                   14: Int,
                   896: Int, 
-                )
-                /* 
-                println("------Relu layer2--------")
-                Foreach(0 until 896 by 1, 0 until 14 by 1){ (i,j) =>
-                  println("Relu result ******* (" + (208+i) + "," + j + ") --> " + SRAM_act_mem(208+i,j))
-                }*/
+                ) 
                 maxpool2D_k2(
                   0: Int,
                   208: Int,
@@ -1169,60 +1138,58 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                   14: Int,
                   896: Int, 
                 ) 
-                /*println("------MAX Pooling--------")
-                Foreach(0 until 448 by 1, 0 until 7 by 1){ (i,j) =>
-                  println("max pooling result ******* (" + i + "," + j + ") --> " + SRAM_act_mem(i,j))
-                }*/
 
-                /* 
-                Foreach(0 until 28 by 1, 0 until 28 by 1){ (i,j) =>
-                  if(i==0) {
-                    println(" ^^^^^^^^^^^ col2im function call ^^^^^^^^^^  ")
-                  }
-                  println("read from ******* (" + j + "," + i + ") --> " + SRAM_act_mem(16+j,i))
-                }
-                */
                 flatten(
                   0: Int,
                   0: Int,
                   7: Int,
-                  448: Int,
+                  0: Int,
                   7: Int,
                   448: Int
                 )
-                //lin1
+                println("flatten")
+                Foreach(0 until 3136 by 1){ (i) =>
+                  println("( " + i + " ) --> " + SRAM_act_mem(i,7))
+                } 
+                  
+                  //lin1
+                println("mxm lin1")
                 blocked_mxm_op(
-                  6: Int,
+                  3: Int,
                   0: Int,
                   3136: Int,
                   784: Int,
                   7: Int,
-                  448: Int,
+                  0: Int,
                   1: Int,
                   3136: Int,
                   0: Int,
                   0: Int,
-                  784: Int,
-                  1: Int,
-                  3136: Int
+                 
                 )
-//lin2
+                println("mxm lin1")
+                Foreach(0 until 784 by 1){ (i) =>
+                  println("( " + i + " ) --> " + SRAM_act_mem(i,0))
+                } 
+
+                
+                //lin2
+                println("mxm lin2")
                 blocked_mxm_op(
-                  3142: Int,
-                  0: Int,
+                  3: Int,
+                  784: Int,
                   784: Int,
                   10: Int,
                   0: Int,
                   0: Int,
                   1: Int,
                   784: Int,
-                  1: Int, //column 1
-                  0: Int, //start from row 0
-                  10: Int,
-                  1: Int,
-                  784: Int
+                  1: Int, //column 2
+                  0: Int //start from row 0
+                 
                 )
-		generic_sram_dram_copy(
+		
+                generic_sram_dram_copy(
                 SRAM_act_mem: SRAM2[T],
                 DRAM_output_mem: DRAM2[T],
                 1: Int, //src
@@ -1232,28 +1199,13 @@ val HOST_weight_mem = Matrix.tabulate(CFG_DRAM_WEIGHT_MEM_M, CFG_DRAM_WEIGHT_MEM
                 1: Int,
                 10: Int
             )
-	}
-	
-		/*transpose(
-		  6: Int,
-		  0: Int,
-		  6: Int,
-		  784: Int,
-		  3136: Int,
-		  784: Int,
-		  )*/
-                
-                /*println("------Flatten function--------")
-                Foreach(0 until 3136 by 1){ (i) =>
-                  if(i==3135){
-                    println(SRAM_act_mem(0,i+7))
-                  }
-                  else {
-                    println(SRAM_act_mem(0,i+7) + ",")
-                  }
 
-                  
-                }*/
+                println("------Result function--------")
+                Foreach(0 until 10 by 1){ (i) =>
+                    println(SRAM_act_mem(i,1))
+                }
+
+          }
 
 
 
